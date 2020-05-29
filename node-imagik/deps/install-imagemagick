@@ -1,0 +1,66 @@
+#!/bin/bash
+set -o errexit
+
+IMAGE_MAGICK_VERSION="7.0.8-66"
+LIBPNG_VERSION="1.6.37"
+
+PREFIX=/usr/local
+WDIR=/tmp/imagemagick
+
+# Install build deps
+apt -y -q remove imagemagick
+apt -y -q install ghostscript gsfonts pkg-config autoconf libbz2-dev libjpeg-dev libtiff-dev libfreetype6-dev
+
+mkdir -p $WDIR
+cd $WDIR
+
+# Build and install libpng
+wget -O $WDIR/libpng.tar.gz https://prdownloads.sourceforge.net/libpng/libpng-$LIBPNG_VERSION.tar.gz?download
+
+tar -xzvf $WDIR/libpng.tar.gz
+cd $WDIR/libpng-$LIBPNG_VERSION
+
+./configure --prefix=$PREFIX
+make all && make install
+
+
+cd $WDIR
+git clone -b frame-parallel https://github.com/strukturag/libde265.git
+cd libde265
+./autogen.sh && ./configure	&& make -j8 install
+
+cd $WDIR
+git clone https://github.com/strukturag/libheif.git
+cd libheif
+./autogen.sh && ./configure	&& make -j8 install
+
+# Build and install ImageMagick
+wget -O $WDIR/ImageMagick.tar.gz "https://github.com/ImageMagick/ImageMagick/archive/$IMAGE_MAGICK_VERSION.tar.gz"
+IMDIR=$WDIR/$(tar tzf $WDIR/ImageMagick.tar.gz --wildcards "ImageMagick-*/configure" |cut -d/ -f1)
+tar zxf $WDIR/ImageMagick.tar.gz -C $WDIR
+cd $IMDIR
+PKG_CONF_LIBDIR=$PREFIX/lib LDFLAGS=-L$PREFIX/lib CFLAGS=-I$PREFIX/include ./configure \
+          --prefix=$PREFIX \
+          --enable-static \
+          --enable-bounds-checking \
+          --enable-hdri \
+          --enable-hugepages \
+          --with-threads \
+          --with-modules \
+          --with-quantum-depth=16 \
+          --without-magick-plus-plus \
+          --with-bzlib \
+          --with-zlib \
+          --without-autotrace \
+          --with-freetype \
+          --with-jpeg \
+          --without-lcms \
+          --with-lzma \
+          --with-png \
+          --with-tiff \
+          --with-heic
+make all && make install
+
+cd $HOME
+rm -rf $WDIR
+ldconfig /usr/local/lib
